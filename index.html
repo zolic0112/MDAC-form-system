@@ -216,8 +216,92 @@ a{color:var(--accent)}
     <p id="decErr" class="err hidden"></p>
   </div>
   <div id="decOut"></div>
+
+  <div class="card">
+    <h2 style="margin-top:0">一鍵填入 MDAC 官網</h2>
+    <p class="muted">建議用電腦版 Chrome。書籤只在你的瀏覽器裡執行，資料不會傳到任何地方。</p>
+    <p><b>安裝（一次就好）：</b>把下面藍色按鈕拖到書籤列。拖不動的話，按「複製書籤網址」，新增一個書籤，把網址欄換成剛複製的內容。</p>
+    <a id="bmLink" class="btn" href="#" onclick="return false" style="cursor:grab">填 MDAC</a>
+    <button id="bmCopy" class="secondary small">複製書籤網址</button>
+    <p style="margin-top:18px"><b>第一次：記住行程</b><br>到 <a href="https://imigresen-online.imi.gov.my/mdac/main?registerMain" target="_blank" rel="noopener">MDAC 官網填寫頁</a>，手動填好交通方式、抵達／離開日期、航班、出發地、住宿資料，以及你自己的 Email（確認信會寄給你）。接著點「填 MDAC」書籤，在跳出的視窗<b>留空</b>按確定，行程就記住了。</p>
+    <p><b>每一位家人：</b><br>① 在上面家人的卡片按「複製（一鍵填入用）」<br>② 回官網，<b>重新整理</b>填寫頁<br>③ 點「填 MDAC」書籤，有跳出貼上權限就按允許<br>④ 核對資料，輸入驗證碼，自己按送出</p>
+    <p class="muted">出生地預設和國籍相同。如果有欄位沒填上，書籤會告訴你是哪一格，手動補上即可。</p>
+  </div>
+
   <p class="muted"><a href="#">回設定頁</a></p>
 </section>
+
+<!-- 書籤程式原始碼：在 MDAC 官網執行 -->
+<script type="text/plain" id="bmSrc">
+(async () => {
+  const HOST = 'imigresen-online.imi.gov.my';
+  if (location.hostname !== HOST || !document.forms.permohonan) { alert('請在 MDAC 官網的填寫頁面使用這個書籤。\n' + HOST); return; }
+  const $ = (id) => document.getElementById(id);
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+  const idle = async () => { await sleep(200); for (let i = 0; i < 100 && window.jQuery && jQuery.active > 0; i++) await sleep(100); };
+  const KEY = 'mdacTripV1';
+  const TRIP_SEL = ['trvlMode', 'embark', 'accommodationStay', 'accommodationState', 'accommodationCity'];
+  const TRIP_DATE = ['arrDt', 'depDt'];
+  const TRIP_TXT = ['vesselNm', 'accommodationAddress1', 'accommodationAddress2', 'accommodationPostcode', 'email', 'confirmEmail'];
+  const fire = (el, t) => el.dispatchEvent(new Event(t, { bubbles: true }));
+  const setTxt = (id, v) => { const el = $(id); if (!el || v == null || v === '') return false; el.value = v; fire(el, 'input'); fire(el, 'change'); return true; };
+  const setDate = (id, v) => { const el = $(id); if (!el || !v) return false; el.value = v; if (window.jQuery) { try { jQuery(el).datepicker('update', v); } catch (e) {} } fire(el, 'change'); return true; };
+  const setSel = async (id, test) => {
+    const el = $(id); if (!el) return false;
+    const o = [...el.options].find((o) => o.value && test(o.text.trim().toUpperCase(), o.value.trim().toUpperCase(), o.value));
+    if (!o) return false;
+    el.value = o.value; fire(el, 'change'); await idle(); return true;
+  };
+  function saveTrip() {
+    const t = {};
+    for (const id of [...TRIP_SEL, ...TRIP_DATE, ...TRIP_TXT]) { const el = $(id); if (el && el.value) t[id] = el.value; }
+    if (!Object.keys(t).length) { alert('畫面上還沒有行程資料。請先手動填好交通、日期、航班、住宿，再點一次書籤。'); return; }
+    localStorage.setItem(KEY, JSON.stringify(t));
+    alert('已記住行程（' + Object.keys(t).length + ' 格）。之後幫每位家人填時會自動帶入。');
+  }
+  let raw = '';
+  try { raw = await navigator.clipboard.readText(); } catch (e) {}
+  if (!/MDACFILL:/.test(raw)) {
+    const c = prompt('貼上解密頁「複製（一鍵填入用）」的內容。\n\n如果是要記住目前畫面上的行程，請留空直接按確定。');
+    if (c === null) return;
+    if (!c.trim()) { saveTrip(); return; }
+    raw = c;
+  }
+  let p;
+  try { p = JSON.parse(raw.slice(raw.indexOf('MDACFILL:') + 9).trim()); } catch (e) { alert('內容格式不對，請回解密頁重新複製。'); return; }
+  let trip = null;
+  try { trip = JSON.parse(localStorage.getItem(KEY)); } catch (e) {}
+  const miss = [];
+  const ok = (r, label) => { if (!r) miss.push(label); };
+  const N = (p.nationality || 'TAIWAN').toUpperCase();
+  const nat = (t, v) => t === N || t.includes(N) || (N === 'TAIWAN' && v === 'TWN');
+  ok(await setSel('nationality', nat), '國籍 Nationality');
+  ok(await setSel('pob', nat), '出生地 Place of Birth');
+  const F = p.sex === 'FEMALE';
+  ok(await setSel('sex', (t) => F ? (t.includes('FEMALE') || t.includes('PEREMPUAN') || t === 'F')
+                               : ((t.startsWith('MALE') || t.includes('LELAKI') || t === 'M') && !t.includes('FEMALE'))), '性別 Sex');
+  if (p.phoneCode) {
+    const re = new RegExp('(^|\\D)' + p.phoneCode + '(\\D|$)');
+    ok(await setSel('region', (t, v) => re.test(t) || v.replace(/\D/g, '') === p.phoneCode), '國碼 Country Code');
+  }
+  ok(setTxt('name', p.name), '姓名 Name');
+  ok(setTxt('passNo', p.passNo), '護照號碼 Passport No.');
+  ok(setTxt('mobile', p.mobile), '手機 Mobile');
+  ok(setDate('dob', p.dob), '出生日期 Date of Birth');
+  ok(setDate('passExpDte', p.passExpDte), '護照效期 Passport Expiry');
+  if (trip) {
+    for (const id of TRIP_SEL) if (trip[id]) ok(await setSel(id, (t, v, raw) => raw === trip[id]), id);
+    for (const id of TRIP_DATE) if (trip[id]) setDate(id, trip[id]);
+    for (const id of TRIP_TXT) if (trip[id]) setTxt(id, trip[id]);
+  }
+  if (p.email) { setTxt('email', p.email); setTxt('confirmEmail', p.email); }
+  try { await navigator.clipboard.writeText(''); } catch (e) {}
+  alert('已填入 ' + p.name + '。\n' +
+    (miss.length ? '\n⚠ 這些欄位沒填上，請手動補：\n' + miss.join('\n') + '\n' : '') +
+    (trip ? '' : '\n還沒記住行程，交通與住宿請手動填（填好後可再點書籤、留空按確定來記住）。\n') +
+    '\n請核對資料，輸入驗證碼後自己按送出。');
+})();
+</script>
 
 </main>
 <script>
@@ -449,12 +533,27 @@ $("decBtn").onclick = async () => {
         btn.onclick = () => copy(copyVal, btn); td.appendChild(btn);
       }
       card.appendChild(table);
+      const fill = {
+        name: data.name, passNo: data.passport, sex: data.sex, nationality: data.nationality || "TAIWAN",
+        dob: data.dob ? fmt(data.dob) : "", passExpDte: data.expiry ? fmt(data.expiry) : "",
+        phoneCode: (data.phoneCode || "").replace(/\D/g, ""), mobile: (data.phone || "").replace(/^\+/, ""),
+        email: data.email || ""
+      };
+      const fb = document.createElement("button"); fb.textContent = "複製（一鍵填入用）";
+      fb.onclick = () => copy("MDACFILL:" + JSON.stringify(fill), fb);
+      card.appendChild(fb);
     } catch {
       card.innerHTML = '<p class="err">這段解不開：可能複製不完整，或是用別的私鑰產生的連結。</p>';
     }
     out.appendChild(card);
   }
 };
+
+/* ================= 一鍵填入書籤 ================= */
+const BM_HREF = "javascript:" + encodeURIComponent($("bmSrc").textContent.trim());
+$("bmLink").href = BM_HREF;
+$("bmLink").onclick = e => { e.preventDefault(); alert("請把這個按鈕「拖」到書籤列，不是點它。\n拖不動的話，按下方的「複製書籤網址」。"); };
+$("bmCopy").onclick = e => copy(BM_HREF, e.currentTarget);
 
 /* ================= 路由 ================= */
 async function route(){
