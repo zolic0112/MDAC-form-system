@@ -235,7 +235,13 @@ a{color:var(--accent)}
 <script type="text/plain" id="bmSrc">
 (async () => {
   const HOST = 'imigresen-online.imi.gov.my';
-  if (location.hostname !== HOST || !document.forms.permohonan) { alert('請在 MDAC 官網的填寫頁面使用這個書籤。\n' + HOST); return; }
+  if (location.hostname !== HOST) { alert('請在 MDAC 官網的填寫頁面使用這個書籤。\n' + HOST); return; }
+  /* 解除官網的複製／貼上／右鍵限制 */
+  const EV = ['paste', 'copy', 'cut', 'drop', 'contextmenu', 'selectstart'];
+  document.querySelectorAll('*').forEach((el) => EV.forEach((t) => { if (el.hasAttribute('on' + t)) el.removeAttribute('on' + t); try { el['on' + t] = null; } catch (e) {} }));
+  if (!window.__mdacUnblocked) { EV.forEach((t) => window.addEventListener(t, (e) => e.stopImmediatePropagation(), true)); window.__mdacUnblocked = true; }
+  document.querySelectorAll('input,textarea').forEach((el) => { el.style.userSelect = 'text'; el.removeAttribute('readonly'); });
+  if (!document.forms.permohonan) { alert('已解除貼上限制。\n（這頁不是填寫頁，所以沒有自動填入）'); return; }
   const $ = (id) => document.getElementById(id);
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   const idle = async () => { await sleep(200); for (let i = 0; i < 100 && window.jQuery && jQuery.active > 0; i++) await sleep(100); };
