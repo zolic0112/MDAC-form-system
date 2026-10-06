@@ -277,7 +277,12 @@ a{color:var(--accent)}
       let v = v0.normalize('NFKC').normalize('NFD').replace(/[̀-ͯ]/g, '')
         .replace(/[‘’‛′]/g, "'").replace(/[“”″]/g, '"').replace(/[‐-―]/g, '-')
         .replace(/[  -​　]/g, ' ').replace(/\s+/g, ' ').trim();
-      if (el.id && /^accommodationAddress/.test(el.id)) v = v.toUpperCase().replace(/[^A-Z0-9 ]+/g, ' ').replace(/\s+/g, ' ').trim();
+      /* 官網把標點符號也當成「Non-Roman」：依欄位只留允許的字元 */
+      const id = el.id || '';
+      if (/^accommodationAddress/.test(id) || id === 'name') v = v.toUpperCase().replace(/[^A-Z0-9 ]+/g, ' ').replace(/\s+/g, ' ').trim();
+      if (id === 'name') v = v.replace(/[0-9]/g, '').replace(/\s+/g, ' ').trim();
+      if (id === 'passNo' || id === 'vesselNm') v = v.toUpperCase().replace(/[^A-Z0-9]/g, '');
+      if (id === 'mobile' || id === 'accommodationPostcode') v = v.replace(/\D/g, '');
       const name = LABEL[el.id] || el.id || el.name || '某一格';
       if (v !== v0) { el.value = v; fire(el, 'input'); fire(el, 'change'); fixed.push(name); }
       el.style.outline = '';
@@ -496,7 +501,7 @@ function setErr(key, msg, inputs){
 $("form").onsubmit = e => {
   e.preventDefault();
   const errs = [];
-  const name = $("f_name").value.trim().replace(/\s+/g," ").toUpperCase();
+  const name = $("f_name").value.replace(/[,.'\-]+/g," ").trim().replace(/\s+/g," ").toUpperCase();
   let m = !name ? "請填英文姓名"
         : /[^\x00-\x7F]/.test(name) ? "請填護照上的「英文」姓名，不是中文"
         : !/^[A-Z ,.'\-]+$/.test(name) ? "姓名只能有英文字母和空格" : "";
@@ -620,7 +625,8 @@ $("decBtn").onclick = async () => {
       }
       card.appendChild(table);
       const fill = {
-        name: data.name, passNo: data.passport, sex: data.sex, nationality: data.nationality || "TAIWAN",
+        name: (data.name || "").replace(/[^A-Za-z ]+/g, " ").replace(/\s+/g, " ").trim().toUpperCase(),
+        passNo: (data.passport || "").replace(/[^A-Za-z0-9]/g, "").toUpperCase(), sex: data.sex, nationality: data.nationality || "TAIWAN",
         dob: data.dob ? fmt(data.dob) : "", passExpDte: data.expiry ? fmt(data.expiry) : "",
         phoneCode: (data.phoneCode || "").replace(/\D/g, ""), mobile: (data.phone || "").replace(/^\+/, ""),
         email: data.email || ""
