@@ -223,7 +223,9 @@ a{color:var(--accent)}
     <p><b>安裝（一次就好）：</b>把下面藍色按鈕拖到書籤列。拖不動的話，按「複製書籤網址」，新增一個書籤，把網址欄換成剛複製的內容。</p>
     <a id="bmLink" class="btn" href="#" onclick="return false" style="cursor:grab">填 MDAC</a>
     <button id="bmCopy" class="secondary small">複製書籤網址</button>
-    <p style="margin-top:18px"><b>第一次：記住行程</b><br>到 <a href="https://imigresen-online.imi.gov.my/mdac/main?registerMain" target="_blank" rel="noopener">MDAC 官網填寫頁</a>，手動填好交通方式、抵達／離開日期、航班、出發地、住宿資料，以及你自己的 Email（確認信會寄給你）。接著點「填 MDAC」書籤，在跳出的視窗<b>留空</b>按確定，行程就記住了。</p>
+    <p style="margin-top:18px"><b>第一次：記住行程</b><br>到 <a href="https://imigresen-online.imi.gov.my/mdac/main?registerMain" target="_blank" rel="noopener">MDAC 官網填寫頁</a>，手動填好交通方式、抵達／離開日期、航班、出發地、住宿類型，以及你自己的 Email（確認信會寄給你）。</p>
+    <p><b>飯店地址不用手打：</b>從訂房確認信或 Google 地圖複製整段地址，到官網點書籤，跳出的視窗會自動帶入，按確定。地址、州、城市、郵遞區號會一起填好。</p>
+    <p>全部填好後，再點一次書籤，在跳出的視窗<b>清空內容</b>按確定，行程就記住了。</p>
     <p><b>每一位家人：</b><br>① 在上面家人的卡片按「複製（一鍵填入用）」<br>② 回官網，<b>重新整理</b>填寫頁<br>③ 點「填 MDAC」書籤，有跳出貼上權限就按允許<br>④ 核對資料，輸入驗證碼，自己按送出</p>
     <p class="muted">出生地預設和國籍相同。如果有欄位沒填上，書籤會告訴你是哪一格，手動補上即可。</p>
   </div>
@@ -265,12 +267,66 @@ a{color:var(--accent)}
     localStorage.setItem(KEY, JSON.stringify(t));
     alert('已記住行程（' + Object.keys(t).length + ' 格）。之後幫每位家人填時會自動帶入。');
   }
+  async function fillAddress(txt) {
+    const s = ' ' + txt.toUpperCase().replace(/[^A-Z0-9]+/g, ' ').replace(/\s+/g, ' ').trim() + ' ';
+    const pcs = s.match(/\b\d{5}\b/g);
+    const pc = pcs ? pcs[pcs.length - 1] : '';
+    /* 郵遞區號後面是城市／州／國家，已有獨立欄位，地址行只留前面的街道部分 */
+    let addr = s;
+    if (pc) { const head = s.slice(0, s.lastIndexOf(' ' + pc + ' ')).trim(); addr = head.length >= 8 ? head : s.replace(new RegExp('\\b' + pc + '\\b'), ' '); }
+    addr = addr.replace(/\bMALAYSIA\b/g, ' ').replace(/\s+/g, ' ').trim();
+    const a1 = $('accommodationAddress1'), a2 = $('accommodationAddress2');
+    const max = (el) => (el && el.maxLength > 0 ? el.maxLength : 100);
+    let l1 = addr, l2 = '', cut = false;
+    if (l1.length > max(a1)) {
+      const i = addr.lastIndexOf(' ', max(a1));
+      l1 = addr.slice(0, i > 0 ? i : max(a1)).trim();
+      l2 = addr.slice(l1.length).trim();
+      if (l2.length > max(a2)) { l2 = l2.slice(0, max(a2)).trim(); cut = true; }
+    }
+    setTxt('accommodationAddress1', l1);
+    if (a2) { a2.value = l2; fire(a2, 'input'); fire(a2, 'change'); }
+    if (pc) setTxt('accommodationPostcode', pc);
+    /* 用地址文字找州與城市：取地址中最後出現的那個 */
+    let hay = s.replace(/ PENANG /g, ' PULAU PINANG ').replace(/ MALACCA /g, ' MELAKA ');
+    const norm = (t) => (' ' + t.toUpperCase().replace(/[^A-Z0-9]+/g, ' ') + ' ').replace(/ (WILAYAH PERSEKUTUAN|W P|WP|FEDERAL TERRITORY( OF)?) /g, ' ').replace(/\s+/g, ' ').trim();
+    const best = (sel) => {
+      if (!sel) return null;
+      let b = null, bp = -1, bl = 0;
+      const hNS = hay.replace(/ /g, '');
+      for (const o of sel.options) {
+        if (!o.value) continue;
+        const k = norm(o.text); if (!k) continue;
+        let p = hay.lastIndexOf(' ' + k + ' ');
+        if (p < 0) { const q = hNS.lastIndexOf(k.replace(/ /g, '')); p = q < 0 ? -1 : q; }
+        if (p > bp || (p === bp && p >= 0 && k.length > bl)) { b = o; bp = p; bl = k.length; }
+      }
+      return bp >= 0 ? b : null;
+    };
+    const st = $('accommodationState'), ct = $('accommodationCity');
+    const miss = [];
+    const so = best(st);
+    if (so) { st.value = so.value; fire(st, 'change'); await idle(); await sleep(300); await idle(); } else miss.push('州 State');
+    const co = so ? best(ct) : null;
+    if (co) { ct.value = co.value; fire(ct, 'change'); } else miss.push('城市 City');
+    if (!pc) miss.push('郵遞區號 Postcode');
+    let trip = {};
+    try { trip = JSON.parse(localStorage.getItem(KEY)) || {}; } catch (e) {}
+    for (const id of ['accommodationAddress1', 'accommodationAddress2', 'accommodationPostcode', 'accommodationState', 'accommodationCity']) { const el = $(id); if (el && el.value) trip[id] = el.value; else delete trip[id]; }
+    localStorage.setItem(KEY, JSON.stringify(trip));
+    alert('已填入地址' + (so ? '，州：' + so.text.trim() : '') + (co ? '，城市：' + co.text.trim() : '') + '。\n' +
+      (miss.length ? '\n⚠ 請手動選：' + miss.join('、') + '\n' : '') +
+      (cut ? '\n⚠ 地址太長，第二行已截斷，請檢查。\n' : '') +
+      '\n地址已記住，之後幫家人填會自動帶入。');
+  }
   let raw = '';
   try { raw = await navigator.clipboard.readText(); } catch (e) {}
   if (!/MDACFILL:/.test(raw)) {
-    const c = prompt('貼上解密頁「複製（一鍵填入用）」的內容。\n\n如果是要記住目前畫面上的行程，請留空直接按確定。');
+    const pre = raw && raw.trim().length < 400 ? raw.trim().replace(/\s*\n\s*/g, ', ') : '';
+    const c = prompt('貼上以下其中一種，再按確定：\n・家人資料（解密頁「複製（一鍵填入用）」）\n・飯店地址（從訂房確認信或 Google 地圖複製整段）\n\n留空按確定 = 記住目前畫面上的行程', pre);
     if (c === null) return;
     if (!c.trim()) { saveTrip(); return; }
+    if (!/MDACFILL:/.test(c)) { await fillAddress(c); return; }
     raw = c;
   }
   let p;
