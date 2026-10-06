@@ -267,7 +267,31 @@ a{color:var(--accent)}
     localStorage.setItem(KEY, JSON.stringify(t));
     alert('已記住行程（' + Object.keys(t).length + ' 格）。之後幫每位家人填時會自動帶入。');
   }
+  /* 檢查並修正非英文字元（全形、重音符號、彎引號、中文） */
+  const LABEL = { name: '姓名', passNo: '護照號碼', email: 'Email', confirmEmail: '確認 Email', mobile: '手機', vesselNm: '航班號碼', accommodationAddress1: '地址第 1 行', accommodationAddress2: '地址第 2 行', accommodationPostcode: '郵遞區號', dob: '出生日期', passExpDte: '護照效期', arrDt: '抵達日', depDt: '離開日' };
+  function cleanAll() {
+    const fixed = [], bad = [];
+    document.querySelectorAll('input[type=text],input:not([type]),input[type=email],input[type=tel],textarea').forEach((el) => {
+      if (!el.value || el.offsetParent === null) return;
+      const v0 = el.value;
+      let v = v0.normalize('NFKC').normalize('NFD').replace(/[̀-ͯ]/g, '')
+        .replace(/[‘’‛′]/g, "'").replace(/[“”″]/g, '"').replace(/[‐-―]/g, '-')
+        .replace(/[  -​　]/g, ' ').replace(/\s+/g, ' ').trim();
+      if (el.id && /^accommodationAddress/.test(el.id)) v = v.toUpperCase().replace(/[^A-Z0-9 ]+/g, ' ').replace(/\s+/g, ' ').trim();
+      const name = LABEL[el.id] || el.id || el.name || '某一格';
+      if (v !== v0) { el.value = v; fire(el, 'input'); fire(el, 'change'); fixed.push(name); }
+      el.style.outline = '';
+      if (/[^\x20-\x7E]/.test(v)) { el.style.outline = '3px solid red'; bad.push(name + '：' + v.match(/[^\x20-\x7E]+/g).join(' ')); }
+    });
+    return { fixed, bad };
+  }
+  const cleanMsg = () => {
+    const r = cleanAll();
+    return (r.fixed.length ? '\n已自動修正：' + r.fixed.join('、') + '\n' : '') +
+      (r.bad.length ? '\n⚠ 這些欄位有中文或特殊字，已用紅框標出，請改成英文：\n' + r.bad.join('\n') + '\n' : '');
+  };
   async function fillAddress(txt) {
+    if (/[㐀-鿿豈-﫿]/.test(txt)) { alert('這是中文地址，官網只收英文。\n請從英文的訂房確認信複製，或把 Google 地圖語言切成 English 再複製。'); return; }
     const s = ' ' + txt.toUpperCase().replace(/[^A-Z0-9]+/g, ' ').replace(/\s+/g, ' ').trim() + ' ';
     const pcs = s.match(/\b\d{5}\b/g);
     const pc = pcs ? pcs[pcs.length - 1] : '';
@@ -317,14 +341,14 @@ a{color:var(--accent)}
     alert('已填入地址' + (so ? '，州：' + so.text.trim() : '') + (co ? '，城市：' + co.text.trim() : '') + '。\n' +
       (miss.length ? '\n⚠ 請手動選：' + miss.join('、') + '\n' : '') +
       (cut ? '\n⚠ 地址太長，第二行已截斷，請檢查。\n' : '') +
-      '\n地址已記住，之後幫家人填會自動帶入。');
+      '\n地址已記住，之後幫家人填會自動帶入。' + cleanMsg());
   }
   let raw = '';
   try { raw = await navigator.clipboard.readText(); } catch (e) {}
   if (!/MDACFILL:/.test(raw)) {
     const pre = raw && raw.trim().length < 400 ? raw.trim().replace(/\s*\n\s*/g, ', ') : '';
-    const c = prompt('貼上以下其中一種，再按確定：\n・家人資料（解密頁「複製（一鍵填入用）」）\n・飯店地址（從訂房確認信或 Google 地圖複製整段）\n\n留空按確定 = 記住目前畫面上的行程', pre);
-    if (c === null) return;
+    const c = prompt('貼上以下其中一種，再按確定：\n・家人資料（解密頁「複製（一鍵填入用）」）\n・飯店地址（從訂房確認信或 Google 地圖複製整段）\n\n留空按確定 = 記住目前畫面上的行程\n按取消 = 只檢查有沒有中文或全形字', pre);
+    if (c === null) { const m = cleanMsg(); alert(m ? '檢查完成。\n' + m : '✓ 沒有發現中文或全形字。'); return; }
     if (!c.trim()) { saveTrip(); return; }
     if (!/MDACFILL:/.test(c)) { await fillAddress(c); return; }
     raw = c;
@@ -361,7 +385,7 @@ a{color:var(--accent)}
   alert('已填入 ' + p.name + '。\n' +
     (miss.length ? '\n⚠ 這些欄位沒填上，請手動補：\n' + miss.join('\n') + '\n' : '') +
     (trip ? '' : '\n還沒記住行程，交通與住宿請手動填（填好後可再點書籤、留空按確定來記住）。\n') +
-    '\n請核對資料，輸入驗證碼後自己按送出。');
+    cleanMsg() + '\n請核對資料，輸入驗證碼後自己按送出。');
 })();
 </script>
 
